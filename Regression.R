@@ -30,14 +30,13 @@ usGdpData <- usGdpData %>%
   group_by(Year) %>%
   summarise(GDP = mean(GDP, na.rm = TRUE))
 
-mobility_data<-read.csv(file.path(data_dir, "GSS level 2e.csv"))
-mobility_data<-mobility_data[,c("year", "Mobility", "Mobilitystate")] 
+# Load and merge mobility data
+mobility_data <- read.csv(file.path(data_dir, "GSS level 2e.csv"))
+mobility_data <- mobility_data[, c("year", "Mobility", "Mobilitystate")] 
 colnames(gss_data)[1] <- "year" 
 gss_data <- merge(mobility_data, gss_data, by = "year", all.x = TRUE)
 colnames(usGdpData)[1] <- "year"
 colnames(usImmigrationData)[1] <- "year"
-
-
 
 # Merge and process gss_data with mobility, GDP, and immigration data
 gss_data <- gss_data %>%
@@ -91,60 +90,6 @@ gss_data <- gss_data %>%
     XMARSEX = na_interpolation(XMARSEX, option = "spline")
   ) %>%
   mutate(
-    zFAIR = scale(FAIR)[,1],
-    zTRUST = scale(TRUST)[,1],
-    zHAPPY = scale(HAPPY)[,1],
-    zHELPFUL = scale(HELPFUL)[,1],
-    zMobility = scale(Mobility)[,1],
-    zMobilitystate = scale(Mobilitystate)[,1],
-    zAGED = scale(AGED)[,1],
-    zATTEND = scale(ATTEND)[,1],
-    zCONARMY = scale(CONARMY)[,1],
-    zCONBUS = scale(CONBUS)[,1],
-    zCONCLERG = scale(CONCLERG)[,1],
-    zCONEDUC = scale(CONEDUC)[,1],
-    zCONFED = scale(CONFED)[,1],
-    zCONFINAN = scale(CONFINAN)[,1],
-    zCONJUDGE = scale(CONJUDGE)[,1],
-    zCONLABOR = scale(CONLABOR)[,1],
-    zCONLEGIS = scale(CONLEGIS)[,1],
-    zCONMEDIC = scale(CONMEDIC)[,1],
-    zCONPRESS = scale(CONPRESS)[,1],
-    zCONSCI = scale(CONSCI)[,1],
-    zCONTV = scale(CONTV)[,1],
-    zCOURTS = scale(COURTS)[,1],
-    zDIVLAW = scale(DIVLAW)[,1],
-    zFINALTER = scale(FINALTER)[,1],
-    zFINRELA = scale(FINRELA)[,1],
-    zGETAHEAD = scale(GETAHEAD)[,1],
-    zHAPMAR = scale(HAPMAR)[,1],
-    zHEALTH = scale(HEALTH)[,1],
-    zHOMOSEX = scale(HOMOSEX)[,1],
-    zLIFE = scale(LIFE)[,1],
-    zNATAID = scale(NATAID)[,1],
-    zNATARMS = scale(NATARMS)[,1],
-    zNATCITY = scale(NATCITY)[,1],
-    zNATCRIME = scale(NATCRIME)[,1],
-    zNATDRUG = scale(NATDRUG)[,1],
-    zNATEDUC = scale(NATEDUC)[,1],
-    zNATENVIR = scale(NATENVIR)[,1],
-    zNATFARE = scale(NATFARE)[,1],
-    zNATHEAL = scale(NATHEAL)[,1],
-    zNATRACE = scale(NATRACE)[,1],
-    zNEWS = scale(NEWS)[,1],
-    zPORNLAW = scale(PORNLAW)[,1],
-    zPREMARSX = scale(PREMARSX)[,1],
-    zRELITEN = scale(RELITEN)[,1],
-    zSATJOB = scale(SATJOB)[,1],
-    zXMARSEX = scale(XMARSEX)[,1]
-    
-  )
-
-gss_data <- gss_data %>%
-  left_join(usImmigrationData, by = c("year" = "year")) %>%
-  rename("Immigration" = "Number") %>%
-  left_join(usGdpData, by = c("year" = "year")) %>%
-  mutate(
     FAIRLAG = lag(FAIR),
     TRUSTLAG = lag(TRUST),
     HAPPYLAG = lag(HAPPY),
@@ -193,27 +138,9 @@ gss_data <- gss_data %>%
     XMARSEXLAG = lag(XMARSEX)
   )
 
-
-
-
-# Calculate missing values per column
-data_by_year <- gss_data %>%
-  group_by(year) %>%
-  summarise_all(mean, na.rm = TRUE)
-nan_count_per_column <- sapply(data_by_year, function(x) sum(is.na(x)))
-
-labels_data <- labels_data %>%
-  mutate(missing_count = nan_count_per_column[match(variable, names(nan_count_per_column))])
-
-
-
 # Basic Model Analysis
 basic_model <- lm(HAPPY ~ MobilityLAG + HAPPYLAG, data = gss_data)
-
-# Display the summary of the model
 print(summary(basic_model))
-
-# Display confidence intervals
 print(confint(basic_model))
 
 # Calculate partial R² for MobilityLAG
@@ -221,41 +148,66 @@ partial_r2 <- (sqrt(summary(basic_model)$coefficients["MobilityLAG", "t value"]^
                       (summary(basic_model)$coefficients["MobilityLAG", "t value"]^2 + basic_model$df.residual)))^2
 print(paste("Partial R² for MobilityLAG:", partial_r2))
 
-# Define target columns
-target_column_names <- names(gss_data)[4:47]
+# List of target variables
+target_column_names <- c(
+  "NATENVIR", "NATHEAL", "NATCITY", "NATCRIME", "NATDRUG", "NATEDUC", 
+  "NATRACE", "NATARMS", "NATAID", "NATFARE", "COURTS", "ATTEND", 
+  "RELITEN", "HAPPY", "HAPMAR", "HEALTH", "LIFE", "HELPFUL", 
+  "FAIR", "TRUST", "CONFINAN", "CONBUS", "CONCLERG", "CONEDUC", 
+  "CONFED", "CONLABOR", "CONPRESS", "CONMEDIC", "CONTV", "CONJUDGE", 
+  "CONSCI", "CONLEGIS", "CONARMY", "AGED", "SATJOB", "FINALTER", 
+  "FINRELA", "GETAHEAD", "DIVLAW", "PREMARSX", "XMARSEX", 
+  "HOMOSEX", "PORNLAW", "NEWS"
+)
 
 # Initialize results data frame
 results <- data.frame(Column_Name = target_column_names, Partial_R2 = NA, beta_value = NA, se_value = NA, t_value = NA)
 
-# Loop through each column
+# Loop through each variable
 for (i in seq_along(target_column_names)) {
   current_column <- target_column_names[i]
-  current_lag_column <- paste0(current_column, "Lag")
+  current_LAG_column <- paste0(current_column, "LAG")
   
-  # Check if the "Lag" column exists in the data
-  if (current_lag_column %in% colnames(gss_data)) {
-    # Run the linear regression model
-    model <- lm(gss_data[[current_column]] ~ MobilityLAG + gss_data[[current_lag_column]], data = gss_data)
+  # Check if both the lag column and MobilityLAG exist in the data
+  if (current_LAG_column %in% colnames(gss_data) && "MobilityLAG" %in% colnames(gss_data)) {
+    # Build and run model
+    formula <- as.formula(paste(current_column, "~ MobilityLAG +", current_LAG_column))
+    model <- lm(formula, data = gss_data)
     
-    # Extract model statistics
+    # Extract statistics
     t_value <- summary(model)$coefficients["MobilityLAG", "t value"]
     partial_r2 <- (sqrt(t_value^2 / (t_value^2 + model$df.residual)))^2
     beta_value <- summary(model)$coefficients["MobilityLAG", "Estimate"]
     se_value <- summary(model)$coefficients["MobilityLAG", "Std. Error"]
     
-    # Store the results
+    # Store results
     results$Partial_R2[i] <- partial_r2
     results$beta_value[i] <- beta_value
     results$se_value[i] <- se_value
     results$t_value[i] <- t_value
   } else {
-    # If the "Lag" column doesn't exist, store NA values
-    results$Partial_R2[i] <- NA
-    results$beta_value[i] <- NA
-    results$se_value[i] <- NA
-    results$t_value[i] <- NA
+    # Print message for missing lag column
+    cat("Skipping", current_column, "because", current_LAG_column, "or MobilityLAG doesn't exist.\n")
   }
 }
 
-# Display the results
+# Display results
 print(results)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
