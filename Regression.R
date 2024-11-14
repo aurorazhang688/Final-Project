@@ -30,6 +30,8 @@ usGdpData <- usGdpData %>%
   group_by(Year) %>%
   summarise(GDP = mean(GDP, na.rm = TRUE))
 
+
+
 # Load and merge mobility data
 mobility_data <- read.csv(file.path(data_dir, "GSS level 2e.csv"))
 mobility_data <- mobility_data[, c("year", "Mobility", "Mobilitystate")] 
@@ -89,6 +91,60 @@ gss_data <- gss_data %>%
     SATJOB = na_interpolation(SATJOB, option = "spline"),
     XMARSEX = na_interpolation(XMARSEX, option = "spline")
   ) %>%
+  mutate(
+    ZFAIR = scale(FAIR),
+    ZTRUST = scale(TRUST),
+    ZHAPPY = scale(HAPPY),
+    ZHELPFUL = scale(HELPFUL),
+    ZMobility = scale(Mobility),
+    ZMobilitystate = scale(Mobilitystate),
+    ZAGED = scale(AGED),
+    ZATTEND = scale(ATTEND),
+    ZCONARMY = scale(CONARMY),
+    ZCONBUS = scale(CONBUS),
+    ZCONCLERG = scale(CONCLERG),
+    ZCONEDUC = scale(CONEDUC),
+    ZCONFED = scale(CONFED),
+    ZCONFINAN = scale(CONFINAN),
+    ZCONJUDGE = scale(CONJUDGE),
+    ZCONLABOR = scale(CONLABOR),
+    ZCONLEGIS = scale(CONLEGIS),
+    ZCONMEDIC = scale(CONMEDIC),
+    ZCONPRESS = scale(CONPRESS),
+    ZCONSCI = scale(CONSCI),
+    ZCONTV = scale(CONTV),
+    ZCOURTS = scale(COURTS),
+    ZDIVLAW = scale(DIVLAW),
+    ZFINALTER = scale(FINALTER),
+    ZFINRELA = scale(FINRELA),
+    ZGETAHEAD = scale(GETAHEAD),
+    ZHAPMAR = scale(HAPMAR),
+    ZHEALTH = scale(HEALTH),
+    ZHOMOSEX = scale(HOMOSEX),
+    ZLIFE = scale(LIFE),
+    ZNATAID = scale(NATAID),
+    ZNATARMS = scale(NATARMS),
+    ZNATCITY = scale(NATCITY),
+    ZNATCRIME = scale(NATCRIME),
+    ZNATDRUG = scale(NATDRUG),
+    ZNATEDUC = scale(NATEDUC),
+    ZNATENVIR = scale(NATENVIR),
+    ZNATFARE = scale(NATFARE),
+    ZNATHEAL = scale(NATHEAL),
+    ZNATRACE = scale(NATRACE),
+    ZNEWS = scale(NEWS),
+    ZPORNLAW = scale(PORNLAW),
+    ZPREMARSX = scale(PREMARSX),
+    ZRELITEN = scale(RELITEN),
+    ZSATJOB = scale(SATJOB),
+    ZXMARSEX = scale(XMARSEX)
+  )
+
+
+gss_data <- gss_data %>%
+  left_join(usImmigrationData, by = c("year" = "year")) %>%
+  rename("IMMIGRATION" = "Number") %>%
+  left_join(usGdpData, by = c("year" = "year")) %>%
   mutate(
     FAIRLAG = lag(FAIR),
     TRUSTLAG = lag(TRUST),
@@ -194,9 +250,77 @@ for (i in seq_along(target_column_names)) {
 # Display results
 print(results)
 
+# Save regression results
+write.csv(results, file.path(output_dir, "regression_results.csv"))
+
+# EGA Analysis
+# Standardize the data and run EGA on selected columns
+standardized_data <- scale(gss_data[, target_column_names], center = TRUE, scale = TRUE)
+ega_result <- EGA(standardized_data, model = "TMFG")
+
+# Define item names for visualization (you may want to customize this list with meaningful names)
+items <- c(
+  "Improving & protecting environment", "Improving & protecting nations health", 
+  "Solving problems of big cities", "Halting rising crime rate", 
+  "Dealing with drug addiction", "Improving nations education system",
+  "Improving the conditions of blacks", "Military, armaments, and defense",
+  "Foreign aid", "Welfare", "Courts dealing with criminals", "Religious attendance", 
+  "Religious strength", "General happiness", "Marriage happiness", "Health condition", 
+  "Life excitement level", "Helpful behavior", "Fair behavior", "Trust in people",
+  "Confidence in financial institutions", "Confidence in big business", 
+  "Confidence in organized religion", "Confidence in education", "Confidence in federal govt", 
+  "Confidence in organized labor", "Confidence in press", "Confidence in medicine", 
+  "Confidence in television", "Confidence in Supreme Court", "Confidence in science",
+  "Confidence in Congress", "Confidence in military", "Opinions on elderly care",
+  "Job satisfaction", "Financial situation change", "Family income opinion",
+  "Views on advancement", "Divorce laws", "Pre-marital sex opinion", "Extramarital sex opinion",
+  "Homosexual relations opinion", "Pornography laws opinion", "News readership"
+)
+
+# Plot the EGA network
+qgraph(ega_result$network, layout = "spring", groups = as.factor(ega_result$wc), 
+       nodeNames = items, legend.cex = 0.4, color = c("#34548B", "#F36F61", "#FAD02E", "#4FB9D3"), 
+       edge.color = "darkgray")
+
+# Save EGA results
+write.csv(ega_result$dim.variables, file.path(output_dir, "EGA_dimensions.csv"))
+
+# End of code
+# 加載必要的套件
+library(EGAnet)
+library(igraph)
+library(qgraph)
 
 
+# 執行 EGA 分析
+ega_result <- EGA(standardized_data, model = "TMFG")
 
+# 設定節點名稱
+items <- c(
+  "Improving & protecting environment", "Improving & protecting nations health",
+  "Solving problems of big cities", "Halting rising crime rate", "Dealing with drug addiction",
+  "Improving nations education system", "Improving the conditions of blacks",
+  "Military, armaments, and defense", "Foreign aid", "Welfare", "Courts dealing with criminals",
+  "How often R attends religious services", "Strength of affiliation", "General happiness",
+  "Happiness of marriage", "Condition of health", "Is life exciting or dull",
+  "People helpful or looking out for selves", "People fair or try to take advantage",
+  "Can people be trusted", "Confid in banks & financial institutions", "Confidence in major companies",
+  "Confidence in organized religion", "Confidence in education",
+  "Confid. in exec branch of fed govt", "Confidence in organized labor", "Confidence in press",
+  "Confidence in medicine", "Confidence in television",
+  "Confid. in united states supreme court", "Confidence in scientific community",
+  "Confidence in congress", "Confidence in military", "Should aged live with their children",
+  "Work satisfaction", "Change in financial situation", "Opinion of family income",
+  "Opinion of how people get ahead", "Divorce laws", "Sex before marriage",
+  "Sex with person other than spouse", "Homosexual sex relations", "Feelings about pornography laws",
+  "How often Does R read newspaper"
+)
+
+# 繪製 EGA 圖表
+qgraph(ega_result$network, layout = "spring", groups = as.factor(ega_result$wc), 
+       nodeNames = items, legend.cex = 0.4, 
+       color = c("#34548B", "#F36F61", "#FAD02E", "#4FB9D3","lightgreen"), 
+       edge.color = "darkgray")
 
 
 
