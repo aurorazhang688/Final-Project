@@ -290,3 +290,344 @@ calculateStatistics_data.to_csv(r"C:\Users\freya\Desktop\24 fall study\Python2\F
 ```
 
 We prepared the data by interpolating missing values using KNN imputation, standardizing the variables for consistency, and merging external datasets like immigration and GDP data to add context. Lagged variables were created to capture temporal relationships, ensuring the dataset was ready for regression and statistical analysis.
+
+
+```{python}
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.impute import KNNImputer
+from sklearn.cluster import KMeans
+import statsmodels.api as sm
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Load data paths
+cleaned_data_path = r"C:\Users\Pei-Chin\Dropbox (1)\final_python\calculateStatistics_data_test.csv"
+labels_data_path = r"C:\Users\Pei-Chin\Dropbox (1)\final_python\labels_data.csv"
+
+# Load cleaned data
+def load_cleaned_data():
+    data = pd.read_csv(cleaned_data_path)
+    data.columns = data.columns.str.upper()  # Ensure all columns are uppercase
+    data = data.apply(pd.to_numeric, errors="coerce")  # Ensure all columns are numeric
+    return data
+
+# Load labels data
+def load_labels():
+    labels = pd.read_csv(labels_data_path)
+    return labels
+
+# Data loading
+cleaned_data = load_cleaned_data()
+labels_data = load_labels()
+
+# Function to filter variables
+def filter_variables(variable_types, missing_threshold):
+    type_column_map = {
+        "Likert Scale Variables": "Likert Scale Variables",
+        "Binary Variables": "Binary Variables",
+        "Continuous Variables": "Continuous Variables",
+        "Multichoice Variables": "Multichoice variables",
+        "Administration Variable": "Administration variable",
+    }
+    selected_columns = [type_column_map[typ] for typ in variable_types if typ in type_column_map]
+    if not selected_columns:
+        return []
+
+    filtered_data = labels_data.loc[
+        (labels_data[selected_columns].sum(axis=1) > 0) &
+        (labels_data["missing_count"] <= missing_threshold)
+    ]
+    return [var.upper() for var in filtered_data["variable"].tolist()]
+```
+
+
+```{python}
+# Perform PCA and clustering
+def perform_pca_and_clustering(selected_vars):
+    if not selected_vars or len(selected_vars) < 2:
+        print("Insufficient variables selected for PCA.")
+        return None, None, None
+
+    data_for_pca = cleaned_data[selected_vars]
+
+    # Transpose data to cluster variables (columns)
+    data_for_pca = data_for_pca.T
+
+    # Fill missing values
+    imputer = KNNImputer(n_neighbors=5)
+    data_imputed = imputer.fit_transform(data_for_pca)
+
+    # Standardize data
+    scaler = StandardScaler()
+    data_scaled = scaler.fit_transform(data_imputed)
+
+    # Perform PCA
+    pca = PCA(n_components=2)
+    pca_result = pca.fit_transform(data_scaled)
+
+    # Perform clustering
+    kmeans = KMeans(n_clusters=4, random_state=42)
+    clusters = kmeans.fit_predict(data_scaled)
+
+    return pca_result, clusters, data_for_pca.index.tolist()
+
+# Generate PCA plot
+def generate_pca_plot(pca_result, clusters, variable_names):
+    if pca_result is None or clusters is None:
+        return
+
+    plt.figure(figsize=(10, 7))
+    for cluster in np.unique(clusters):
+        cluster_indices = np.where(clusters == cluster)[0]
+        plt.scatter(
+            pca_result[cluster_indices, 0],
+            pca_result[cluster_indices, 1],
+            label=f"Cluster {cluster + 1}",
+            alpha=0.7,
+        )
+
+        for idx in cluster_indices:
+            plt.annotate(
+                variable_names[idx],
+                (pca_result[idx, 0], pca_result[idx, 1]),
+                fontsize=8,
+                alpha=0.7,
+            )
+
+    plt.title("PCA Result and Clustering")
+    plt.xlabel("Principal Component 1")
+    plt.ylabel("Principal Component 2")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+```
+```{python}
+# Perform regression
+def perform_regression(selected_vars):
+    if not selected_vars or len(selected_vars) < 2:
+        print("Insufficient variables selected for regression.")
+        return None
+
+    results = []
+    for var in selected_vars:
+        lag_var = f"{var}Lag"
+        if lag_var not in cleaned_data.columns:
+            cleaned_data[lag_var] = cleaned_data[var].shift(1)
+
+        if "MOBILITYLAG" not in cleaned_data.columns:
+            print("Required variable 'MOBILITYLAG' not found in data.")
+            continue
+
+        regression_data = cleaned_data[[var, lag_var, "MOBILITYLAG"]].dropna()
+
+        if regression_data.empty:
+            continue
+
+        X = regression_data[["MOBILITYLAG", lag_var]]
+        y = regression_data[var]
+        X = sm.add_constant(X)
+        model = sm.OLS(y, X).fit()
+
+        results.append({
+            "Variable": var,
+            "R-squared": model.rsquared,
+            "MOBILITYLAG_coef": model.params["MOBILITYLAG"],
+            "Lag_coef": model.params[lag_var],
+            "p-value (MOBILITYLAG)": model.pvalues["MOBILITYLAG"],
+            "t-value": model.tvalues["MOBILITYLAG"]
+        })
+
+    return pd.DataFrame(results)
+
+# Generate cluster information
+def generate_cluster_info(clusters, variable_names):
+    cluster_info = {f"Cluster {i + 1}": [] for i in np.unique(clusters)}
+    for var, cluster in zip(variable_names, clusters):
+        cluster_info[f"Cluster {cluster + 1}"].append(var)
+    return cluster_info
+
+```
+
+```{python}
+# Plot regression fit lines
+def plot_regression_fit_lines(cleaned_data, top_vars):
+    plt.figure(figsize=(12, 8))
+    for var, lag_var, model in top_vars:
+        x_vals = np.linspace(cleaned_data["MOBILITYLAG"].min(), cleaned_data["MOBILITYLAG"].max(), 100)
+        y_vals = model.params["const"] + model.params["MOBILITYLAG"] * x_vals
+        plt.plot(x_vals, y_vals, label=f"{var} (Coef: {model.params['MOBILITYLAG']:.2f})", alpha=0.8)
+
+    plt.title("Regression Fit Lines for Top 10 Variables", fontsize=14)
+    plt.xlabel("MOBILITYLAG", fontsize=12)
+    plt.ylabel("Fitted Value", fontsize=12)
+    plt.legend(loc="best", fontsize=10)
+    plt.tight_layout()
+    plt.show()
+
+```
+
+
+```{python}
+# Generate barplot and raincloud plot
+def generate_plots(regression_results, clusters, variable_names, interested_vars):
+    if regression_results is None:
+        return
+
+    # Assign categories
+    results = []
+    for var in variable_names:
+        if var in interested_vars:
+            category = "Interested"
+        elif clusters[variable_names.index(var)] == clusters[variable_names.index(interested_vars[0])]:
+            category = "Proximate"
+        else:
+            category = "Distal"
+
+        t_value = regression_results.loc[regression_results["Variable"] == var, "MOBILITYLAG_coef"].abs().values[0]
+        results.append({"variable": var, "abs_t_value": abs(t_value), "category": category})
+
+    results_df = pd.DataFrame(results)
+
+    # Define soft colors for categories
+    color_palette = {
+        "Interested": "#a6cee3",  # Soft blue
+        "Proximate": "#b2df8a",  # Soft green
+        "Distal": "#fb9a99",     # Soft pink
+    }
+
+    # Barplot
+    plt.figure(figsize=(12, 8))
+    sns.barplot(
+        data=results_df,
+        x="abs_t_value",
+        y="variable",
+        hue="category",
+        order=results_df.sort_values("abs_t_value", ascending=False)["variable"],
+        palette=color_palette  # Use the soft color palette
+    )
+    plt.title("Variables by Absolute T-Value and Category")
+    plt.xlabel("Absolute T-Value")
+    plt.ylabel("Variables")
+    plt.legend(title="Category")
+    plt.tight_layout()
+    plt.show()
+
+
+```
+
+
+```{python}
+# Generate barplot and raincloud plot
+def generate_plots(regression_results, clusters, variable_names, interested_vars):
+    if regression_results is None:
+        return
+
+    # Assign categories
+    results = []
+    for var in variable_names:
+        if var in interested_vars:
+            category = "Interested"
+        elif clusters[variable_names.index(var)] == clusters[variable_names.index(interested_vars[0])]:
+            category = "Proximate"
+        else:
+            category = "Distal"
+
+        t_value = regression_results.loc[regression_results["Variable"] == var, "MOBILITYLAG_coef"].abs().values[0]
+        results.append({"variable": var, "abs_t_value": abs(t_value), "category": category})
+
+    results_df = pd.DataFrame(results)
+
+    # Define soft colors for categories
+    color_palette = {
+        "Interested": "#a6cee3",  # Soft blue
+        "Proximate": "#b2df8a",  # Soft green
+        "Distal": "#fb9a99",     # Soft pink
+    }
+
+
+    # Raincloud Plot
+    plt.figure(figsize=(10, 6))
+    sns.violinplot(
+        data=results_df,
+        x="category",
+        y="abs_t_value",
+        hue="category",
+        split=True,
+        inner="box",
+        palette=color_palette  # Use the soft color palette
+    )
+    sns.stripplot(
+        data=results_df,
+        x="category",
+        y="abs_t_value",
+        color="gray",  # Use neutral color for strip points
+        size=2,
+        alpha=0.5,
+        jitter=True,
+        dodge=True
+    )
+    plt.title("Raincloud Plot: Absolute T-Values by Category")
+    plt.ylabel("Absolute T-Value for Regression Coefficient")
+    plt.xlabel("Category")
+    plt.legend(title="Category")
+    plt.tight_layout()
+    plt.show()
+```
+
+
+```{python}
+# Main execution
+if __name__ == "__main__":
+    variable_types = ["Likert Scale Variables"]
+    missing_threshold = 5
+
+    # Filter variables
+    selected_vars = filter_variables(variable_types, missing_threshold)
+    print(f"Selected Variables: {selected_vars}")
+
+    # Perform PCA and clustering
+    pca_result, clusters, variable_names = perform_pca_and_clustering(selected_vars)
+
+    # Display cluster information
+    cluster_info = generate_cluster_info(clusters, variable_names)
+    for cluster, vars_in_cluster in cluster_info.items():
+        print(f"{cluster}: {vars_in_cluster}")
+
+    # Generate PCA plot
+    generate_pca_plot(pca_result, clusters, variable_names)
+
+    # Perform regression
+    regression_results = perform_regression(selected_vars)
+    print(regression_results)
+
+    # Select top 5 positive and 5 negative variables by MOBILITYLAG_coef
+    regression_results["abs_coef"] = regression_results["MOBILITYLAG_coef"].abs()
+    top_5_positive = regression_results.sort_values("MOBILITYLAG_coef", ascending=False).head(5)
+    top_5_negative = regression_results.sort_values("MOBILITYLAG_coef", ascending=True).head(5)
+    top_10_vars = pd.concat([top_5_positive, top_5_negative])
+
+    # Prepare data for fit-line plot
+    top_vars_for_fit = []
+    for _, row in top_10_vars.iterrows():
+        var = row["Variable"]
+        lag_var = f"{var}Lag"
+        regression_data = cleaned_data[[var, lag_var, "MOBILITYLAG"]].dropna()
+
+        X = regression_data[["MOBILITYLAG", lag_var]]
+        y = regression_data[var]
+        X = sm.add_constant(X)
+        model = sm.OLS(y, X).fit()
+
+        top_vars_for_fit.append((var, lag_var, model))
+
+    # Plot regression fit lines
+    plot_regression_fit_lines(cleaned_data, top_vars_for_fit)
+
+    # Generate barplot and raincloud plot
+    generate_plots(regression_results, clusters, variable_names, ["HAPPY", "TRUST", "FAIR"])
+
+```
+
