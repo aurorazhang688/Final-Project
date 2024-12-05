@@ -1,0 +1,292 @@
+---
+title: "Final Project"
+format: html
+---
+
+## Group Members:
+Name / Cnetid / Github_username / section
+
+1.Pei-Chin Lu / Peichin / 
+
+2. Yuan Qi / yuanqi / freyaqi
+
+3. Huiting(Aurora) Zhang / zhanght / aurorazhang688 / section 4
+
+
+## Research Question and the approach we took
+Research in various fields has shown that residential mobility influences key aspects of how individuals think about themselves, interact with others, and perceive public rules. Based on this, our project primarily investigates the relationship between social mobility (e.g., economic opportunities, migration patterns, and educational access) and a range of personal characteristics. Specifically, we will pay attention to residents' happiness, trustiness, and perception of fairness. Establishing reliable connections between these factors is crucial for designing effective public policies that enhance social creativity and public well-being. To achieve this, we conduct a series of regression analyses. Additionally, to ensure that our variable selection is free from selection bias or "cherry-picking," we have implemented additional measures. We developed a method to objectively verify the validity of our variable selection, including the use of Exploratory Graph Analysis (EGA) and statistical tests, to classify variables as "Interested," "Proximate," or "Distal." These measures and visualizations help enhance the credibility of our research and ensure that our conclusions are derived from objective data analysis. All these charts and visualizations will ultimately be presented in our Shiny app.
+
+
+## Setup
+```{python}
+# Setup
+import dask.dataframe as dd
+import pandas as pd
+import numpy as np
+import pyreadstat
+from sklearn.preprocessing import StandardScaler
+from scipy.interpolate import interp1d
+from dash import Dash, dcc, html, Input, Output, State
+import plotly.graph_objects as go
+import plotly.express as px
+from dash.dash_table import DataTable
+from sklearn.impute import KNNImputer
+
+from shiny import App, ui, reactive, render
+from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans
+import statsmodels.api as sm
+import tempfile
+import matplotlib.pyplot as plt
+```
+
+## Load Dataset
+```{python}
+# Load data
+gss_data, meta = pyreadstat.read_sav(r"C:\Users\freya\Desktop\24 fall study\Python2\Final Project\GSS7218_R3.sav")
+labels_data = pd.read_excel(r"C:\Users\freya\Desktop\24 fall study\Python2\Final Project\suggestions_modified.xlsx")
+```
+
+We utilize publicly available datasets such as the General Social Survey (GSS) from 1978 to 2018, which provides comprehensive data on social trends, public happiness, and socio-economic factors in the United States. In addition, we will incorporate data on U.S. Immigration and GDP, sourced from government and financial databases like the Federal Reserve Economic Data (FRED). These datasets will be merged and preprocessed within our Shiny app to ensure consistency and compatibility. 
+
+In labels_data, we categorized each personal characteristic variable into one of the following types for user selection in the Shiny app interface:
+Likert Scale Variables,
+Binary Variables,
+Continuous Variables,
+Multichoice Variables,
+Administration Variables.
+
+```{python}
+print(gss_data.head())
+print(labels_data.head())
+```
+
+## Clean Data
+```{python}
+# Define columns to recode
+column_recode_3to2 = ["COURTS", "RELITEN", "HELPFUL", "FAIR", "TRUST", "AGED", "FINALTER", "DIVLAW"]
+column_recode_4othertomissing = ["GETAHEAD"]
+column_recode_5othertomissing = ["PREMARSX", "XMARSEX", "HOMOSEX"]
+
+# Recode columns
+gss_data[column_recode_4othertomissing] = gss_data[column_recode_4othertomissing].replace(4, np.nan)
+gss_data[column_recode_5othertomissing] = gss_data[column_recode_5othertomissing].replace(5, np.nan)
+
+# Recode values in column_recode_3to2
+gss_data[column_recode_3to2] = gss_data[column_recode_3to2].replace(3, 9992)
+gss_data[column_recode_3to2] = gss_data[column_recode_3to2].replace(2, 9993)
+gss_data[column_recode_3to2] = gss_data[column_recode_3to2].replace(9992, 2)
+gss_data[column_recode_3to2] = gss_data[column_recode_3to2].replace(9993, 3)
+```
+
+```{python}
+# Calculate the mean of each column by year
+data_by_year = gss_data.groupby("YEAR").mean(numeric_only=True).reset_index()
+print(data_by_year.columns)
+data_by_year.to_csv(r"C:\Users\freya\Desktop\24 fall study\Python2\Final Project\data_by_year.csv", index=False)
+```
+
+We cleaned the GSS dataset by recoding specific variables to ensure consistency and handle missing values. Columns with specific values (e.g., 4 or 5) were recoded to NaN, while others had their values swapped to align with our analysis needs. After preprocessing, we calculated the mean of each column grouped by year and saved the results to a CSV file for further analysis.
+
+```{python}
+# Calculate missing values per column in 'data_by_year'
+nan_count_per_column = data_by_year.isna().sum()
+
+# Mark the missing data of each column in labels_data
+labels_data['missing_count'] = labels_data['variable'].map(nan_count_per_column)
+```
+
+```{python}
+# Print the result
+print(labels_data.head())
+labels_data.to_csv(r"C:\Users\freya\Desktop\24 fall study\Python2\Final Project\labels_data.csv", index=False)
+```
+
+We calculated the number of missing values for each column in data_by_year and mapped these counts to the corresponding variables in labels_data.
+
+```{python}
+# Get the current column names
+current_colnames = gss_data.columns
+
+# Convert column names to lowercase and then capitalize the first letter
+new_colnames = [col.lower().capitalize() for col in current_colnames]
+
+# Prepare for EGA
+gss_data_plot = gss_data.copy()
+
+# Assign the new column names to the data frame
+gss_data_plot.columns = new_colnames
+
+# Set the first column name to "year"
+gss_data_plot.columns.values[0] = "year"
+```
+
+```{python}
+# Print the new column names to verify
+print(gss_data_plot.columns)
+print(gss_data_plot.head())
+gss_data_plot.to_csv(r"C:\Users\freya\Desktop\24 fall study\Python2\Final Project\\gss_data_plot.csv", index=False)
+```
+
+```{python}
+# Remove the column at index 2 (equivalent to removing ID column)
+gss_data_cleaned = gss_data.drop(gss_data.columns[1], axis=1)  
+
+# Group by the 'YEAR' column and calculate the mean for each year, ignoring NaN values
+data_mean_by_year = gss_data_cleaned.groupby('YEAR').mean(numeric_only=True).reset_index()
+```
+
+
+```{python}
+# Get the current column names
+current_colnames = data_mean_by_year.columns
+
+# Convert column names to lowercase and then capitalize the first letter
+new_colnames = [col.lower().capitalize() for col in current_colnames]
+
+# Assign the new column names to the DataFrame
+data_mean_by_year.columns = new_colnames
+```
+
+```{python}
+# Display the updated DataFrame with new column names
+print(data_mean_by_year.head())
+
+# Sve the dataframe as .csv
+data_mean_by_year.to_csv(r"C:\Users\freya\Desktop\24 fall study\Python2\Final Project\data_mean_by_year.csv", index=False)
+```
+
+
+```{python}
+# Load the US Immigration data
+us_immigration_data = pd.read_csv(r"C:\Users\freya\Desktop\24 fall study\Python2\Final Project\USImmigration.csv")
+
+# Load the external datasets
+us_gdp_data = pd.read_csv(r"C:\Users\freya\Desktop\24 fall study\Python2\Final Project\FREDGDP.csv")
+
+# Load mobility data
+mobility_data = pd.read_csv(r"C:\Users\freya\Desktop\24 fall study\Python2\Final Project\GSS level 2e.csv")
+
+mobility_data = mobility_data[["year", "Mobility", "Mobilitystate"]]
+```
+
+
+```{python}
+# Change the name of data_mean_by_year
+gss_data1 = data_mean_by_year.copy()
+
+# Rename the first column to "year"
+gss_data1.rename(columns={gss_data1.columns[0]: "year"}, inplace=True)
+
+# Uniform the data type of year
+gss_data1['year'] = gss_data1['year'].astype(int)
+mobility_data['year'] = mobility_data['year'].astype(int)
+```
+
+```{python}
+# Merge mobility data with the gss data on "year"
+gss_data1 = pd.merge(mobility_data, gss_data1, on="year", how="left")
+```
+
+
+```{python}
+# Format the date and filter for October in the GDP data
+us_gdp_data['Date'] = pd.to_datetime(us_gdp_data['DATE'], format='%Y-%m-%d')
+us_gdp_data['Year'] = us_gdp_data['Date'].dt.year
+us_gdp_data['Month'] = us_gdp_data['Date'].dt.month
+us_gdp_data = us_gdp_data[us_gdp_data['Month'] == 10]
+```
+
+```{python}
+# Verifying by printing the first few rows of each dataset
+print(gss_data.head())
+print(us_gdp_data.head())
+print(us_immigration_data.head())
+```
+
+```{python}
+# Save the dataframe as .csv
+gss_data1.to_csv(r"C:\Users\freya\Desktop\24 fall study\Python2\Final Project\gss_data1.csv", index=False)
+us_gdp_data.to_csv(r"C:\Users\freya\Desktop\24 fall study\Python2\Final Project\us_gdp_data.csv", index=False)
+us_immigration_data.to_csv(r"C:\Users\freya\Desktop\24 fall study\Python2\Final Project\us_immigration_data.csv", index=False)
+```
+
+We standardized column names, cleaned data by removing unnecessary columns, and calculated yearly averages. External datasets like US Immigration, GDP, and mobility data were processed and merged with GSS data using the "year" column. GDP data was filtered for October observations, ensuring all datasets were aligned and ready for analysis.
+
+
+```{python}
+# Define the columns to interpolate
+columns_to_interpolate = [
+    "Fair", "Trust", "Happy", "Helpful", "Mobility", "Mobilitystate", "Aged", 
+    "Attend", "Conarmy", "Conbus", "Conclerg", "Coneduc", "Confed", "Confinan", 
+    "Conjudge", "Conlabor", "Conlegis", "Conmedic", "Conpress", "Consci", "Contv", 
+    "Courts", "Divlaw", "Finalter", "Finrela", "Getahead", "Hapmar", "Health", 
+    "Homosex", "Life", "Nataid", "Natarms", "Natcity", "Natcrime", "Natdrug", 
+    "Nateduc", "Natenvir", "Natfare", "Natheal", "Natrace", "News", "Pornlaw", 
+    "Premarsx", "Reliten", "Satjob", "Incom16", "Income", "Rincome", "Partyid", 
+    "Polviews", "Natspac", "Fund", "Fund16", "Spfund", "Class", "Satfin", "Coop", 
+    "Comprend", "Xmarsex"
+]
+```
+
+```{python}
+# Sort data by 'year' or the relevant column before interpolation
+gss_data2 = gss_data1.sort_values(by='year')
+
+# Check data types of columns to be interpolated
+column_types = gss_data2[columns_to_interpolate].dtypes
+print("Data types of columns to interpolate:")
+print(column_types)
+
+# Convert columns to numeric (force errors to NaN)
+gss_data2[columns_to_interpolate] = gss_data2[columns_to_interpolate].apply(pd.to_numeric, errors='coerce')
+```
+
+```{python}
+# Apply interpolation using KNN imputer method
+imputer = KNNImputer(n_neighbors=5) 
+gss_data2[columns_to_interpolate] = imputer.fit_transform(gss_data2[columns_to_interpolate])
+```
+
+
+```{python}
+# Scaling the data (using StandardScaler from sklearn)
+scaler = StandardScaler()
+
+# Apply scaling to the selected columns
+gss_data2[columns_to_interpolate] = scaler.fit_transform(gss_data2[columns_to_interpolate])
+```
+
+
+
+```{python}
+# Merging datasets (left join)
+gss_data3 = gss_data2.merge(us_immigration_data, how='left', left_on='year', right_on='Year') \
+                   .rename(columns={'Number': 'Immigration'}) \
+                   .merge(us_gdp_data, how='left', left_on='year', right_on='Year')
+
+# Creating lag columns
+columns_to_lag = [
+    "Fair", "Trust", "Happy", "Helpful", "Mobility", "Mobilitystate", "Aged", "Attend", "Conarmy",
+    "Conbus", "Conclerg", "Coneduc", "Confed", "Confinan", "Conjudge", "Conlabor", "Conlegis",
+    "Conmedic", "Conpress", "Consci", "Contv", "Courts", "Divlaw", "Finalter", "Finrela", "Getahead",
+    "Hapmar", "Health", "Homosex", "Life", "Nataid", "Natarms", "Natcity", "Natcrime", "Natdrug",
+    "Nateduc", "Natenvir", "Natfare", "Natheal", "Natrace", "News", "Pornlaw", "Premarsx", "Reliten",
+    "Satjob", "Incom16", "Income", "Rincome", "Partyid", "Polviews", "Natspac", "Fund", "Fund16",
+    "Spfund", "Class", "Satfin", "Coop", "Comprend", "Xmarsex"
+]
+
+# Creating lag columns for each column in columns_to_lag
+for column in columns_to_lag:
+    gss_data3[f'{column}Lag'] = gss_data3[column].shift(1)
+
+# Calculating statistics (can be adjusted as needed)
+calculateStatistics_data = gss_data3
+```
+
+```{python}
+print(calculateStatistics_data.head())
+calculateStatistics_data.to_csv(r"C:\Users\freya\Desktop\24 fall study\Python2\Final Project\calculateStatistics_data.csv", index=False)
+```
+
+We prepared the data by interpolating missing values using KNN imputation, standardizing the variables for consistency, and merging external datasets like immigration and GDP data to add context. Lagged variables were created to capture temporal relationships, ensuring the dataset was ready for regression and statistical analysis.
