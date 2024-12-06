@@ -1,0 +1,11 @@
+# Ignore all R files
+*.R
+
+# Ignore all Python files
+*.py
+
+# Ignore files that start with "final project" in lowercase
+final project*
+
+# Ignore virtual environment folder
+../venv/
