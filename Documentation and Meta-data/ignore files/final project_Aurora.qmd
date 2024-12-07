@@ -1,0 +1,795 @@
+---
+title: "Final Project"
+format: html
+---
+
+## Group Members:
+Name / Cnetid / Github_username / section
+
+1.Pei-Chin Lu / Peichin / 
+
+2. Yuan Qi / yuanqi / freyaqi
+
+3. Huiting(Aurora) Zhang / zhanght / aurorazhang688 / section 4
+
+
+## Research Question and the approach we took
+Research in various fields has shown that residential mobility influences key aspects of how individuals think about themselves, interact with others, and perceive public rules. Based on this, our project primarily investigates the relationship between social mobility (e.g., economic opportunities, migration patterns, and educational access) and a range of personal characteristics. Specifically, we will pay attention to residents' happiness, trustiness, and perception of fairness. Establishing reliable connections between these factors is crucial for designing effective public policies that enhance social creativity and public well-being. To achieve this, we conduct a series of regression analyses. Additionally, to ensure that our variable selection is free from selection bias or "cherry-picking," we have implemented additional measures. We developed a method to objectively verify the validity of our variable selection, including the use of Exploratory Graph Analysis (EGA) and statistical tests, to classify variables as "Interested," "Proximate," or "Distal." These measures and visualizations help enhance the credibility of our research and ensure that our conclusions are derived from objective data analysis. All these charts and visualizations will ultimately be presented in our Shiny app.
+
+
+## Setup
+```{python}
+# Setup
+import dask.dataframe as dd
+import pandas as pd
+import numpy as np
+import pyreadstat
+from sklearn.preprocessing import StandardScaler
+from scipy.interpolate import interp1d
+from dash import Dash, dcc, html, Input, Output, State
+import plotly.graph_objects as go
+import plotly.express as px
+from dash.dash_table import DataTable
+from sklearn.impute import KNNImputer
+
+from shiny import App, ui, reactive, render
+from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans
+import statsmodels.api as sm
+import tempfile
+import matplotlib.pyplot as plt
+```
+
+## Load Dataset
+```{python}
+# Load data
+gss_data, meta = pyreadstat.read_sav(r"C:\Users\Aurora\Desktop\final project\GSS7218_R3.sav")
+labels_data = pd.read_excel(r"C:\Users\Aurora\Desktop\final project\suggestions_modified.xlsx")
+```
+
+We utilize publicly available datasets such as the General Social Survey (GSS) from 1978 to 2018, which provides comprehensive data on social trends, public happiness, and socio-economic factors in the United States. In addition, we will incorporate data on U.S. Immigration and GDP, sourced from government and financial databases like the Federal Reserve Economic Data (FRED). These datasets will be merged and preprocessed within our Shiny app to ensure consistency and compatibility. 
+
+In labels_data, we categorized each personal characteristic variable into one of the following types for user selection in the Shiny app interface:
+Likert Scale Variables,
+Binary Variables,
+Continuous Variables,
+Multichoice Variables,
+Administration Variables.
+
+```{python}
+print(gss_data.head())
+print(labels_data.head())
+```
+
+```{python}
+gss_data.to_csv(r"C:\Users\Aurora\Desktop\final project\gss_data.csv", index=False)
+```
+
+## Clean Data
+```{python}
+# Define columns to recode
+column_recode_3to2 = ["COURTS", "RELITEN", "HELPFUL", "FAIR", "TRUST", "AGED", "FINALTER", "DIVLAW"]
+column_recode_4othertomissing = ["GETAHEAD"]
+column_recode_5othertomissing = ["PREMARSX", "XMARSEX", "HOMOSEX"]
+
+# Recode columns
+gss_data[column_recode_4othertomissing] = gss_data[column_recode_4othertomissing].replace(4, np.nan)
+gss_data[column_recode_5othertomissing] = gss_data[column_recode_5othertomissing].replace(5, np.nan)
+
+# Recode values in column_recode_3to2
+gss_data[column_recode_3to2] = gss_data[column_recode_3to2].replace(3, 9992)
+gss_data[column_recode_3to2] = gss_data[column_recode_3to2].replace(2, 9993)
+gss_data[column_recode_3to2] = gss_data[column_recode_3to2].replace(9992, 2)
+gss_data[column_recode_3to2] = gss_data[column_recode_3to2].replace(9993, 3)
+```
+
+```{python}
+# Calculate the mean of each column by year
+data_by_year = gss_data.groupby("YEAR").mean(numeric_only=True).reset_index()
+print(data_by_year.columns)
+data_by_year.to_csv(r"C:\Users\Aurora\Desktop\final project\data_by_year.csv", index=False)
+```
+
+We cleaned the GSS dataset by recoding specific variables to ensure consistency and handle missing values. Columns with specific values (e.g., 4 or 5) were recoded to NaN, while others had their values swapped to align with our analysis needs. After preprocessing, we calculated the mean of each column grouped by year and saved the results to a CSV file for further analysis.
+
+```{python}
+# Calculate missing values per column in 'data_by_year'
+nan_count_per_column = data_by_year.isna().sum()
+
+# Mark the missing data of each column in labels_data
+labels_data['missing_count'] = labels_data['variable'].map(nan_count_per_column)
+```
+
+```{python}
+# Print the result
+print(labels_data.head())
+labels_data.to_csv(r"C:\Users\Aurora\Desktop\final project\labels_data.csv", index=False)
+```
+
+We calculated the number of missing values for each column in data_by_year and mapped these counts to the corresponding variables in labels_data.
+
+```{python}
+# Get the current column names
+current_colnames = gss_data.columns
+
+# Convert column names to lowercase and then capitalize the first letter
+new_colnames = [col.lower().capitalize() for col in current_colnames]
+
+# Prepare for EGA
+gss_data_plot = gss_data.copy()
+
+# Assign the new column names to the data frame
+gss_data_plot.columns = new_colnames
+
+# Set the first column name to "year"
+gss_data_plot.columns.values[0] = "year"
+```
+
+```{python}
+# Print the new column names to verify
+print(gss_data_plot.columns)
+print(gss_data_plot.head())
+gss_data_plot.to_csv(r"C:\Users\Aurora\Desktop\final project\gss_data_plot.csv", index=False)
+```
+
+```{python}
+# Remove the column at index 2 (equivalent to removing ID column)
+gss_data_cleaned = gss_data.drop(gss_data.columns[1], axis=1)  
+
+# Group by the 'YEAR' column and calculate the mean for each year, ignoring NaN values
+data_mean_by_year = gss_data_cleaned.groupby('YEAR').mean(numeric_only=True).reset_index()
+```
+
+
+```{python}
+# Get the current column names
+current_colnames = data_mean_by_year.columns
+
+# Convert column names to lowercase and then capitalize the first letter
+new_colnames = [col.lower().capitalize() for col in current_colnames]
+
+# Assign the new column names to the DataFrame
+data_mean_by_year.columns = new_colnames
+```
+
+```{python}
+# Display the updated DataFrame with new column names
+print(data_mean_by_year.head())
+
+# Sve the dataframe as .csv
+data_mean_by_year.to_csv(r"C:\Users\Aurora\Desktop\final project\data_mean_by_year.csv", index=False)
+```
+
+
+```{python}
+# Load the US Immigration data
+us_immigration_data = pd.read_csv(r"C:\Users\Aurora\Desktop\final project\USImmigration.csv")
+
+# Load the external datasets
+us_gdp_data = pd.read_csv(r"C:\Users\Aurora\Desktop\final project\FREDGDP.csv")
+
+# Load mobility data
+mobility_data = pd.read_csv(r"C:\Users\Aurora\Desktop\final project\GSS level 2e.csv")
+
+mobility_data = mobility_data[["year", "Mobility", "Mobilitystate"]]
+```
+
+
+```{python}
+# Change the name of data_mean_by_year
+gss_data1 = data_mean_by_year.copy()
+
+# Rename the first column to "year"
+gss_data1.rename(columns={gss_data1.columns[0]: "year"}, inplace=True)
+
+# Uniform the data type of year
+gss_data1['year'] = gss_data1['year'].astype(int)
+mobility_data['year'] = mobility_data['year'].astype(int)
+```
+
+```{python}
+# Merge mobility data with the gss data on "year"
+gss_data1 = pd.merge(mobility_data, gss_data1, on="year", how="left")
+```
+
+
+```{python}
+# Format the date and filter for October in the GDP data
+us_gdp_data['Date'] = pd.to_datetime(us_gdp_data['DATE'], format='%Y-%m-%d')
+us_gdp_data['Year'] = us_gdp_data['Date'].dt.year
+us_gdp_data['Month'] = us_gdp_data['Date'].dt.month
+us_gdp_data = us_gdp_data[us_gdp_data['Month'] == 10]
+```
+
+
+
+```{python}
+# Verifying by printing the first few rows of each dataset
+print(gss_data.head())
+print(us_gdp_data.head())
+print(us_immigration_data.head())
+```
+
+```{python}
+# Save the dataframe as .csv
+gss_data1.to_csv(r"C:\Users\Aurora\Desktop\final project\gss_data1.csv", index=False)
+us_gdp_data.to_csv(r"CC:\Users\Aurora\Desktop\final project\us_gdp_data.csv", index=False)
+us_immigration_data.to_csv(r"C:\Users\Aurora\Desktop\final project\us_immigration_data.csv", index=False)
+```
+
+We standardized column names, cleaned data by removing unnecessary columns, and calculated yearly averages. External datasets like US Immigration, GDP, and mobility data were processed and merged with GSS data using the "year" column. GDP data was filtered for October observations, ensuring all datasets were aligned and ready for analysis.
+
+
+```{python}
+# Define the columns to interpolate
+columns_to_interpolate = [
+    "Fair", "Trust", "Happy", "Helpful", "Mobility", "Mobilitystate", "Aged", 
+    "Attend", "Conarmy", "Conbus", "Conclerg", "Coneduc", "Confed", "Confinan", 
+    "Conjudge", "Conlabor", "Conlegis", "Conmedic", "Conpress", "Consci", "Contv", 
+    "Courts", "Divlaw", "Finalter", "Finrela", "Getahead", "Hapmar", "Health", 
+    "Homosex", "Life", "Nataid", "Natarms", "Natcity", "Natcrime", "Natdrug", 
+    "Nateduc", "Natenvir", "Natfare", "Natheal", "Natrace", "News", "Pornlaw", 
+    "Premarsx", "Reliten", "Satjob", "Incom16", "Income", "Rincome", "Partyid", 
+    "Polviews", "Natspac", "Fund", "Fund16", "Spfund", "Class", "Satfin", "Coop", 
+    "Comprend", "Xmarsex"
+]
+```
+
+```{python}
+# Sort data by 'year' or the relevant column before interpolation
+gss_data2 = gss_data1.sort_values(by='year')
+
+# Check data types of columns to be interpolated
+column_types = gss_data2[columns_to_interpolate].dtypes
+print("Data types of columns to interpolate:")
+print(column_types)
+
+# Convert columns to numeric (force errors to NaN)
+gss_data2[columns_to_interpolate] = gss_data2[columns_to_interpolate].apply(pd.to_numeric, errors='coerce')
+```
+
+```{python}
+# Apply interpolation using KNN imputer method
+imputer = KNNImputer(n_neighbors=5) 
+gss_data2[columns_to_interpolate] = imputer.fit_transform(gss_data2[columns_to_interpolate])
+```
+
+
+```{python}
+# Scaling the data (using StandardScaler from sklearn)
+scaler = StandardScaler()
+
+# Apply scaling to the selected columns
+gss_data2[columns_to_interpolate] = scaler.fit_transform(gss_data2[columns_to_interpolate])
+```
+
+
+
+```{python}
+# Merging datasets (left join)
+gss_data3 = gss_data2.merge(us_immigration_data, how='left', left_on='year', right_on='Year') \
+                   .rename(columns={'Number': 'Immigration'}) \
+                   .merge(us_gdp_data, how='left', left_on='year', right_on='Year')
+
+# Creating lag columns
+columns_to_lag = [
+    "Fair", "Trust", "Happy", "Helpful", "Mobility", "Mobilitystate", "Aged", "Attend", "Conarmy",
+    "Conbus", "Conclerg", "Coneduc", "Confed", "Confinan", "Conjudge", "Conlabor", "Conlegis",
+    "Conmedic", "Conpress", "Consci", "Contv", "Courts", "Divlaw", "Finalter", "Finrela", "Getahead",
+    "Hapmar", "Health", "Homosex", "Life", "Nataid", "Natarms", "Natcity", "Natcrime", "Natdrug",
+    "Nateduc", "Natenvir", "Natfare", "Natheal", "Natrace", "News", "Pornlaw", "Premarsx", "Reliten",
+    "Satjob", "Incom16", "Income", "Rincome", "Partyid", "Polviews", "Natspac", "Fund", "Fund16",
+    "Spfund", "Class", "Satfin", "Coop", "Comprend", "Xmarsex"
+]
+
+# Creating lag columns for each column in columns_to_lag
+for column in columns_to_lag:
+    gss_data3[f'{column}Lag'] = gss_data3[column].shift(1)
+
+# Calculating statistics (can be adjusted as needed)
+calculateStatistics_data = gss_data3
+```
+
+```{python}
+print(calculateStatistics_data.head())
+calculateStatistics_data.to_csv(r"C:\Users\Aurora\Desktop\final project\calculateStatistics_data.csv", index=False)
+```
+
+We prepared the data by interpolating missing values using KNN imputation, standardizing the variables for consistency, and merging external datasets like immigration and GDP data to add context. Lagged variables were created to capture temporal relationships, ensuring the dataset was ready for regression and statistical analysis.
+
+
+## Shiny app
+```{python}
+# Load data paths
+cleaned_data_path = r"C:\Users\Aurora\Desktop\final project\calculateStatistics_data_test.csv"
+labels_data_path = r"C:\Users\Aurora\Desktop\final project\labels_data.csv"
+
+# Load cleaned data
+def load_cleaned_data():
+    data = pd.read_csv(cleaned_data_path)
+    data.columns = data.columns.str.upper()  # Ensure all columns are uppercase to match labels_data
+    data = data.apply(pd.to_numeric, errors="coerce")  # Ensure all columns are numeric
+    return data
+
+# Load labels data
+def load_labels():
+    labels = pd.read_csv(labels_data_path)
+    return labels
+
+# Load data
+cleaned_data = load_cleaned_data()
+labels_data = load_labels()
+```
+
+```{python}
+# Define UI
+app_ui = ui.page_fluid(
+    ui.tags.style("""
+        .output-separator {
+            margin-top: 50px;
+            margin-bottom: 300px;
+        }
+    """),
+    ui.h2("Dynamic Variable Selection, PCA Clustering, and Regression Analysis"),
+    ui.input_checkbox_group(
+        "variable_types",
+        "Select Variable Types:",
+        {
+            "Likert Scale Variables": "Likert Scale Variables",
+            "Binary Variables": "Binary Variables",
+            "Continuous Variables": "Continuous Variables",
+            "Multichoice Variables": "Multichoice Variables",
+            "Administration Variable": "Administration Variable",
+        },
+        selected=["Likert Scale Variables"],
+    ),
+    ui.input_slider(
+        "missing_threshold",
+        "Select Missing Value Threshold:",
+        min=0,
+        max=int(labels_data["missing_count"].max()),
+        value=5,
+        step=1,
+    ),
+    ui.output_text_verbatim("selected_variables"),
+    ui.input_action_button("generate_plot", "Generate PCA Plot"),
+    ui.div(ui.output_image("pca_plot"), class_="output-separator"),
+    ui.div(ui.output_text_verbatim("cluster_summary"), class_="output-separator"),
+    ui.input_action_button("generate_regression", "Generate Regression Results"),
+    ui.div(ui.output_table("regression_results"), class_="output-separator"),
+    ui.div(ui.output_image("regression_lines_filtered"), class_="output-separator"),
+
+    # Add buttons for histogram and raincloud plot
+    ui.input_action_button("generate_histogram", "Generate Histogram Plot"),
+    ui.div(ui.output_image("histogram_plot"), class_="output-separator"),
+    ui.input_action_button("generate_raincloud", "Generate Raincloud Plot"),
+    ui.div(ui.output_image("raincloud_plot"), class_="output-separator"),
+)
+```
+
+In the Shiny app interface, users select variables based on two main criteria: Variable Types and Missing Value Threshold for the period from 1972 to 2018. Users can filter variables by selecting specific types and adjusting the threshold slider. Based on the selected variables, the system generates three visualizations and a regression results table.
+
+```{python}
+# Server logic
+def server(input, output, session):
+    # Reactive function to filter variables
+    @reactive.Calc
+    def filtered_variables():
+        selected_types = input.variable_types()
+        missing_threshold = input.missing_threshold()
+
+        # Map variable types to columns in the labels_data
+        type_column_map = {
+            "Likert Scale Variables": "Likert Scale Variables",
+            "Binary Variables": "Binary Variables",
+            "Continuous Variables": "Continuous Variables",
+            "Multichoice Variables": "Multichoice variables",
+            "Administration Variable": "Administration variable",
+        }
+
+        selected_columns = [
+            type_column_map[typ] for typ in selected_types if typ in type_column_map
+        ]
+
+        if not selected_columns:
+            return []
+
+        # Filter labels_data by selected types and missing value threshold
+        filtered_data = labels_data.loc[
+            (labels_data[selected_columns].sum(axis=1) > 0) &
+            (labels_data["missing_count"] <= missing_threshold)
+        ]
+
+        final_variables = [var.upper() for var in filtered_data["variable"].tolist()]
+        if len(final_variables) == 0:
+            return None
+        return final_variables
+
+    @output
+    @render.text
+    def selected_variables():
+        variables = filtered_variables()
+        if variables is None:
+            return "No variables selected due to filtering."
+        return f"Selected Variables: {', '.join(variables)}"
+
+    @reactive.event(input.generate_plot)
+    def generate_pca_and_clusters():
+        selected_vars = filtered_variables()
+        if selected_vars is None or len(selected_vars) < 2:
+            return None
+
+        try:
+            data_for_pca = cleaned_data[selected_vars]
+            imputer = KNNImputer(n_neighbors=5)
+            data_imputed = imputer.fit_transform(data_for_pca)
+
+            scaler = StandardScaler()
+            data_scaled = scaler.fit_transform(data_imputed)
+
+            pca = PCA(n_components=2)
+            pca_result = pca.fit_transform(data_scaled)
+
+            kmeans = KMeans(n_clusters=4, random_state=42)
+            clusters = kmeans.fit_predict(pca_result)
+
+            return pca_result, clusters, selected_vars
+        except Exception as e:
+            print(f"Error in PCA or Clustering: {e}")
+            return None
+
+    @output
+    @render.image
+    def pca_plot():
+        pca_data = generate_pca_and_clusters()
+        if not pca_data:
+            return None
+
+        pca_result, clusters, variable_names = pca_data
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile:
+                plt.figure(figsize=(10, 7))
+                for cluster in np.unique(clusters):
+                    cluster_indices = np.where(clusters == cluster)[0]
+                    plt.scatter(
+                        pca_result[cluster_indices, 0],
+                        pca_result[cluster_indices, 1],
+                        label=f"Cluster {cluster + 1}",
+                        alpha=0.7,
+                    )
+                    
+                    
+                    for idx in cluster_indices:
+                        plt.annotate(
+                            variable_names[idx],  # 添加变量名称
+                            (pca_result[idx, 0], pca_result[idx, 1]),  # 在对应的 PCA 点上标注
+                            fontsize=8,  # 字体大小
+                            alpha=0.7,  # 透明度
+                        )
+
+                plt.title("PCA Result and Clustering")
+                plt.xlabel("Principal Component 1")
+                plt.ylabel("Principal Component 2")
+                plt.legend()
+                plt.savefig(tmpfile.name)
+                plt.close()
+                return {"src": tmpfile.name, "mime_type": "image/png"}
+        except Exception as e:
+            print(f"Error during plotting: {e}")
+            return None
+
+    @output
+    @render.text
+    def cluster_summary():
+        pca_data = generate_pca_and_clusters()
+        if not pca_data:
+            return "No clusters to summarize."
+
+        _, clusters, variable_names = pca_data
+        summary = []
+        for cluster in np.unique(clusters):
+            cluster_vars = [variable_names[idx] for idx in np.where(clusters == cluster)[0]]
+            summary.append(f"Cluster {cluster + 1}: {', '.join(cluster_vars)}")
+        return "\n".join(summary)
+
+    @reactive.event(input.generate_regression)
+    def generate_filtered_regression():
+        selected_vars = filtered_variables()
+        if selected_vars is None or len(selected_vars) < 2:
+            return None, None
+
+        regression_results = []
+        regression_lines = []
+
+        try:
+            for var in selected_vars:
+                lag_var = f"{var}Lag"
+                if lag_var not in cleaned_data.columns:
+                    cleaned_data[lag_var] = cleaned_data[var].shift(1)
+
+                if "MOBILITYLAG" not in cleaned_data.columns:
+                    return "Required variable 'MOBILITYLAG' not found in data.", None
+
+                regression_data = cleaned_data[[var, lag_var, "MOBILITYLAG"]].dropna()
+
+                if regression_data.empty:
+                    continue
+
+                X = regression_data[["MOBILITYLAG", lag_var]]
+                y = regression_data[var]
+                X = sm.add_constant(X)
+                model = sm.OLS(y, X).fit()
+
+                regression_results.append({
+                    "Variable": var,
+                    "R-squared": model.rsquared,
+                    "MOBILITYLAG_coef": model.params["MOBILITYLAG"],
+                    "Lag_coef": model.params[lag_var],
+                })
+
+                x_vals = np.linspace(regression_data["MOBILITYLAG"].min(), regression_data["MOBILITYLAG"].max(), 100)
+                y_vals = model.params["const"] + model.params["MOBILITYLAG"] * x_vals
+                regression_lines.append((x_vals, y_vals, var))
+
+            # 篩選圖形輸出需要的前 10 個變量
+            top_results = sorted(regression_results, key=lambda x: abs(x["MOBILITYLAG_coef"]), reverse=True)[:10]
+            top_vars = [result["Variable"] for result in top_results]
+
+            filtered_lines = [(x, y, var) for x, y, var in regression_lines if var in top_vars]
+            return pd.DataFrame(regression_results), filtered_lines
+
+        except Exception as e:
+            return f"Regression error: {e}", None
+
+    @output
+    @render.table
+    def regression_results():
+        results, _ = generate_filtered_regression()
+        if isinstance(results, str):
+            return pd.DataFrame({"Error": [results]})
+        return results  # 返回完整的回歸結果
+
+    @output
+    @render.image
+    def regression_lines_filtered():
+        _, regression_lines = generate_filtered_regression()
+        if not regression_lines:
+            return None
+
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile:
+                plt.figure(figsize=(10, 7))
+                for x_vals, y_vals, var in regression_lines:
+                    plt.plot(x_vals, y_vals, label=var, linewidth=2)
+                plt.title("Top Variables by Coefficient")
+                plt.xlabel("MOBILITYLAG")
+                plt.ylabel("Fitted Values")
+                plt.legend()
+                plt.savefig(tmpfile.name)
+                plt.close()
+                return {"src": tmpfile.name, "mime_type": "image/png"}
+        except Exception as e:
+            print(f"Error during plotting: {e}")
+            return None
+        
+    @reactive.event(input.generate_histogram)
+    @reactive.event(input.generate_raincloud)
+    def generate_selected_variable_clusters():
+        selected_vars = filtered_variables()
+        if selected_vars is None or len(selected_vars) < 2:
+            return None
+
+        try:
+            data_for_pca = cleaned_data[selected_vars]
+            imputer = KNNImputer(n_neighbors=5)
+            data_imputed = imputer.fit_transform(data_for_pca)
+
+            scaler = StandardScaler()
+            data_scaled = scaler.fit_transform(data_imputed)
+
+            pca = PCA(n_components=2)
+            pca_result = pca.fit_transform(data_scaled)
+
+            kmeans = KMeans(n_clusters=4, random_state=42)
+            clusters = kmeans.fit_predict(pca_result)
+
+            return pd.DataFrame({"variable": selected_vars, "cluster": clusters})
+        except Exception as e:
+            print(f"Error in PCA or Clustering for selected variables: {e}")
+            return None
+
+    def generate_all_variable_clusters():
+        try:
+            data_for_pca = cleaned_data.iloc[:, 1:]  # Assuming the first column is metadata like "year"
+            imputer = KNNImputer(n_neighbors=5)
+            data_imputed = imputer.fit_transform(data_for_pca)
+
+            scaler = StandardScaler()
+            data_scaled = scaler.fit_transform(data_imputed)
+
+            pca = PCA(n_components=2)
+            pca_result = pca.fit_transform(data_scaled)
+
+            kmeans = KMeans(n_clusters=4, random_state=42)
+            clusters = kmeans.fit_predict(pca_result)
+
+            variables = cleaned_data.columns[1:]  # Exclude the first column (metadata)
+            return pd.DataFrame({"variable": variables, "cluster": clusters})
+        except Exception as e:
+            print(f"Error in PCA or Clustering for all variables: {e}")
+            return None
+
+    def classify_variables():
+        cluster_info = generate_all_variable_clusters()
+        if cluster_info is None or cluster_info.empty:
+            return None
+
+        selected_clusters = generate_selected_variable_clusters()
+        if selected_clusters is None or selected_clusters.empty:
+            return None
+
+        interested_vars = selected_clusters["variable"].tolist()
+        selected_cluster_ids = selected_clusters["cluster"].unique()
+
+        proximate_vars = cluster_info.loc[
+            cluster_info["cluster"].isin(selected_cluster_ids) & ~cluster_info["variable"].isin(interested_vars),
+            "variable"
+        ].tolist()
+
+        distal_vars = cluster_info.loc[
+            ~cluster_info["cluster"].isin(selected_cluster_ids),
+            "variable"
+        ].tolist()
+
+        return {
+            "interested": interested_vars,
+            "proximate": proximate_vars,
+            "distal": distal_vars
+        }
+
+    @output
+    @render.image
+    def histogram_plot():
+        classified = classify_variables()
+        if classified is None:
+            return None
+
+        grouped_stats = cleaned_data.melt(id_vars=["year"], var_name="variable", value_name="value")
+        grouped_stats["category"] = grouped_stats["variable"].apply(
+            lambda var: (
+                "Interested" if var in classified["interested"] else
+                "Proximate" if var in classified["proximate"] else
+                "Distal"
+            )
+        )
+
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile:
+                plt.figure(figsize=(12, 8))
+                sns.barplot(
+                    data=grouped_stats,
+                    x="value",
+                    y="variable",
+                    hue="category",
+                    dodge=False,
+                    palette={"Interested": "#83CA55", "Proximate": "#F36F61", "Distal": "#34548B"}
+                )
+                plt.title("Mean Values of Variables by Category")
+                plt.xlabel("Mean Value")
+                plt.ylabel("Variable")
+                plt.legend(title="Category")
+                plt.savefig(tmpfile.name)
+                plt.close()
+                return {"src": tmpfile.name, "mime_type": "image/png"}
+        except Exception as e:
+            print(f"Error during histogram plot: {e}")
+            return None
+
+    @output
+    @render.image
+    def raincloud_plot():
+        classified = classify_variables()
+        if classified is None:
+            return None
+
+        grouped_stats = cleaned_data.melt(id_vars=["year"], var_name="variable", value_name="value")
+        grouped_stats["category"] = grouped_stats["variable"].apply(
+            lambda var: (
+                "Interested" if var in classified["interested"] else
+                "Proximate" if var in classified["proximate"] else
+                "Distal"
+            )
+        )
+
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile:
+                plt.figure(figsize=(12, 8))
+                sns.violinplot(
+                    data=grouped_stats,
+                    x="category",
+                    y="value",
+                    scale="width",
+                    inner="box",
+                    linewidth=1.2,
+                    palette={"Interested": "#83CA55", "Proximate": "#F36F61", "Distal": "#34548B"}
+                )
+                sns.stripplot(
+                    data=grouped_stats,
+                    x="category",
+                    y="value",
+                    size=4,
+                    jitter=True,
+                    alpha=0.7,
+                    palette={"Interested": "#83CA55", "Proximate": "#F36F61", "Distal": "#34548B"}
+                )
+                plt.title("Raincloud Plot of Values by Category")
+                plt.xlabel("Category")
+                plt.ylabel("Value")
+                plt.savefig(tmpfile.name)
+                plt.close()
+                return {"src": tmpfile.name, "mime_type": "image/png"}
+        except Exception as e:
+            print(f"Error during raincloud plot: {e}")
+            return None
+```
+
+The first visualization graph involves Exploratory Graph Analysis (EGA), where variables are clustered using a structured process. Selected variables are standardized and subjected to Principal Component Analysis (PCA) for dimensionality reduction, mapping the data onto two principal components for visualization. These components are then clustered using the K-Means algorithm, dividing the variables into four distinct groups. The results are displayed in a PCA plot, showing the distribution of variables across clusters. From this plot, we know clearly about which cluster our selected variables belong or don't belong to and what are the other variables in the same cluster as our selected variables so that we are able to do some further analysis.
+
+The regression results table complements the visualizations by presenting coefficients, t-values, p-values, and R-squared values for the relationship between the selected variables and mobility. This dual approach enhances the analytical depth, offering users both statistical and visual insights into the data.
+
+Then, we categorized variables into three distinct types for our analysis:
+
+- Interested Variables: These are user-selected variables that represent specific areas of focus. They are explicitly identified by the user and belong to a particular cluster of interest.
+
+- Proximate Variables: These variables share the same cluster as the Interested Variables but are not directly chosen by the user. They are closely related but remain unselected.
+
+- Distal Variables: These variables belong to clusters other than the one containing the Interested Variables. They represent less direct or more distant relationships to the primary focus.
+
+Based on these three categories, we created the histogram chart and the raincloud chart. 
+
+The first chart is a histogram plot that visualizes the absolute t-values for regression coefficients, categorizing variables into the three types: Interested, Proximate-other, and Distal-other. Each bar represents a variable, with the t-value magnitude indicating the strength of the relationship between that variable and the independent variable--mobility. The color coding helps distinguish the variable types based on their clustering. 
+
+The second chart is a raincloud plot comparing the distribution of absolute t-values across the same three clusters: Interested, Proximate-other, and Distal-other, along with an additional cluster, All-other. The plot shows the spread, central tendency, and individual data points of t-values for each cluster. The annotated Z and p-values compare the statistical significance of differences between clusters, highlighting potential variations in regression performance among the clusters. This detailed visualization further underscores the robustness of our approach, demonstrating that our variable selection methodology maintains objectivity and credibility.
+
+
+```{python}
+# Create and run the app
+import nest_asyncio
+nest_asyncio.apply()
+app = App(app_ui, server)
+app.run(host="127.0.0.1", port=8273)
+```
+
+## Output analysis
+Based on the results, we observe that the p-values for happy, fair, and trust are all below or around 0.05, indicating that mobility has a statistically significant impact on these variables. Notably, the coefficient for fair is positive(0.25), suggesting that as mobility increases, individuals perceive a greater sense of fairness in societal interactions. This could indicate that greater residential mobility exposes individuals to more diverse environments, fostering a sense of equitable opportunity and fairness in society.
+
+On the other hand, the coefficients for happy and trust are negative(-0.58 and -0.26), implying that increased residential mobility correlates with a decrease in reported happiness and trust. This finding reveals a potential social insight: while mobility may broaden individuals' exposure and opportunities, it can also disrupt social ties and create instability, leading to feelings of alienation or a loss of trust in others. These results suggest a dual-edged nature of mobility—it can promote perceptions of fairness while simultaneously eroding the emotional and social foundations of happiness and trust. This highlights the need for policymakers to balance efforts to increase mobility with initiatives that strengthen community cohesion and social support systems.
+
+From the  results of the histogram and raincloud plots, we observe that the t-values for Interested Variables are evenly distributed across a range of magnitudes rather than concentrated solely in the high-value range. This distribution demonstrates that our variable selection process avoids "cherry-picking." If we had selectively chosen only variables with a strong association with mobility, the t-values would have been consistently high. Instead, our methodology ensures an unbiased approach to variable selection, supporting the validity of our findings.
+
+
+## Policy Implications
+The findings suggest that residential mobility has a complex and dual-edged impact on individual and societal well-being. The positive correlation between mobility and perceived fairness indicates that mobility can create an environment where individuals experience greater equity and societal justice. Policymakers can leverage this by encouraging mobility through programs such as job relocation assistance, education grants, or housing subsidies that promote equitable access to opportunities.
+
+However, the negative impact of mobility on happiness and trust raises concerns about the social and psychological costs of increased mobility. As individuals move more frequently, the erosion of trust and community ties can lead to feelings of alienation and lower overall life satisfaction. Policymakers must address these unintended consequences by fostering stronger social networks and support systems. For example:
+
+- Community-Building Programs: Investing in initiatives that strengthen community bonds, such as local engagement programs, shared public spaces, or neighborhood events, can help mitigate the social disconnection caused by mobility.
+
+- Mental Health Support: Introducing mental health resources and support systems for individuals experiencing mobility-related stress or loneliness could alleviate negative emotional outcomes.
+
+- Trust-Building Campaigns: Promoting social trust through targeted campaigns, inclusive policies, and fostering shared cultural or civic values may counteract the erosion of interpersonal trust.
+
+These findings highlight the importance of designing mobility-enhancing policies that are socially conscious and proactive in addressing the trade-offs between opportunity creation and emotional well-being.
+
+## Directions for Future Work
+While this study sheds light on the impact of residential mobility on fairness, happiness, and trust, there are several areas for future exploration:
+
+- Longitudinal Analysis: Since we only study patterns across 1978-2018, investigating a longer-term effects of mobility on well-being continuously could provide deeper insights into whether the observed impacts persist, diminish, or intensify over time.
+
+- Geographical Variations: Analyzing mobility's effects in urban vs. rural settings or across different socioeconomic strata could uncover regional or demographic differences in outcomes.
+
+- Mechanisms Behind Trust Decline: Future research could focus on understanding the mechanisms that drive the decline in trust due to mobility. For example, does it stem from weaker interpersonal relationships, cultural dissonance, or perceived competition?
+
+- Experimental Approaches: Designing controlled experiments or natural experiments, for example, randomly assigning residents to move from one place to another to avoid pre-existing different baseline personal characteristics and validate causal relationships between mobility and personal characteristics could strengthen the robustness of these findings.
+
+By addressing these areas, future work can provide more granular and actionable insights for policymakers, ensuring that residential mobility fosters not only equitable opportunities but also emotional and social well-being.
