@@ -35,6 +35,8 @@ Building on these studies, we aim to revisit this topic using the methodology of
 
 ## Setup
 ```{python}
+#| eval: true
+#| echo: false
 # Setup
 import dask.dataframe as dd
 import pandas as pd
@@ -70,9 +72,11 @@ import altair as alt
 
 ## Load Dataset
 ```{python}
+#| eval: true
+#| echo: false
 # Load data
-gss_data, meta = pyreadstat.read_sav(r"F:\python2\Final-Project\Data\GSS7218_R3.sav")
-labels_data = pd.read_excel(r"F:\python2\Final-Project\Data\suggestions_modified.xlsx")
+gss_data, meta = pyreadstat.read_sav(r"C:\Users\freya\Desktop\24 fall study\Python2\Final Project\GSS7218_R3.sav")
+labels_data = pd.read_excel(r"C:\Users\freya\Desktop\24 fall study\Python2\Final Project\suggestions_modified.xlsx")
 ```
 
 We utilize publicly available datasets such as the General Social Survey (GSS) from 1978 to 2018, which provides comprehensive data on social trends, public happiness, and socio-economic factors in the United States. In addition, we will incorporate data on U.S. Immigration and GDP, sourced from government and financial databases like the Federal Reserve Economic Data (FRED). These datasets will be merged and preprocessed within our Shiny app to ensure consistency and compatibility. 
@@ -102,6 +106,8 @@ Administration Variables.
 
 ## Clean Data
 ```{python}
+#| eval: true
+#| echo: false
 # Define columns to recode
 column_recode_3to2 = ["COURTS", "RELITEN", "HELPFUL", "FAIR", "TRUST", "AGED", "FINALTER", "DIVLAW"]
 column_recode_4othertomissing = ["GETAHEAD"]
@@ -119,14 +125,17 @@ gss_data[column_recode_3to2] = gss_data[column_recode_3to2].replace(9993, 3)
 ```
 
 ```{python}
+#| eval: true
+#| echo: false
 # Calculate the mean of each column by year
 data_by_year = gss_data.groupby("YEAR").mean(numeric_only=True).reset_index()
-print(data_by_year.columns)
 ```
 
 We cleaned the GSS dataset by recoding specific variables to ensure consistency and handle missing values. Columns with specific values (e.g., 4 or 5) were recoded to NaN, while others had their values swapped to align with our analysis needs. After preprocessing, we calculated the mean of each column grouped by year and saved the results to a CSV file for further analysis.
 
 ```{python}
+#| eval: true
+#| echo: false
 # Calculate missing values per column in 'data_by_year'
 nan_count_per_column = data_by_year.isna().sum()
 
@@ -134,14 +143,11 @@ nan_count_per_column = data_by_year.isna().sum()
 labels_data['missing_count'] = labels_data['variable'].map(nan_count_per_column)
 ```
 
-```{python}
-# Print the result
-print(labels_data.head())
-```
-
 We calculated the number of missing values for each column in data_by_year and mapped these counts to the corresponding variables in labels_data.
 
 ```{python}
+#| eval: true
+#| echo: false
 # Get the current column names
 current_colnames = gss_data.columns
 
@@ -159,12 +165,8 @@ gss_data_plot.columns.values[0] = "year"
 ```
 
 ```{python}
-# Print the new column names to verify
-print(gss_data_plot.columns)
-print(gss_data_plot.head())
-```
-
-```{python}
+#| eval: true
+#| echo: false
 # Remove the column at index 2 (equivalent to removing ID column)
 gss_data_cleaned = gss_data.drop(gss_data.columns[1], axis=1)  
 
@@ -174,6 +176,8 @@ data_mean_by_year = gss_data_cleaned.groupby('YEAR').mean(numeric_only=True).res
 
 
 ```{python}
+#| eval: true
+#| echo: false
 # Get the current column names
 current_colnames = data_mean_by_year.columns
 
@@ -182,32 +186,31 @@ new_colnames = [col.lower().capitalize() for col in current_colnames]
 
 # Assign the new column names to the DataFrame
 data_mean_by_year.columns = new_colnames
-```
 
-```{python}
-# Display the updated DataFrame with new column names
-print(data_mean_by_year.head())
-
-# Sve the dataframe as .csv
-data_mean_by_year.to_csv(r"F:\python2\Final-Project\Data\data_mean_by_year.csv", index=False)
+# Save the dataframe as .csv
+data_mean_by_year.to_csv(r"C:\Users\freya\Desktop\24 fall study\Python2\Final Project\data_mean_by_year.csv", index=False)
 ```
 
 
 ```{python}
+#| eval: true
+#| echo: false
 # Load the US Immigration data
-us_immigration_data = pd.read_csv(r"F:\python2\Final-Project\Data\USImmigration.csv")
+us_immigration_data = pd.read_csv(r"C:\Users\freya\Desktop\24 fall study\Python2\Final Project\USImmigration.csv")
 
 # Load the external datasets
-us_gdp_data = pd.read_csv(r"F:\python2\Final-Project\Data\FREDGDP.csv")
+us_gdp_data = pd.read_csv(r"C:\Users\freya\Desktop\24 fall study\Python2\Final Project\FREDGDP.csv")
 
 # Load mobility data
-mobility_data = pd.read_csv(r"F:\python2\Final-Project\Data\GSS level 2e.csv")
+mobility_data = pd.read_csv(r"C:\Users\freya\Desktop\24 fall study\Python2\Final Project\GSS level 2e.csv")
 
 mobility_data = mobility_data[["year", "Mobility", "Mobilitystate"]]
 ```
 
 
 ```{python}
+#| eval: true
+#| echo: false
 # Change the name of data_mean_by_year
 gss_data1 = data_mean_by_year.copy()
 
@@ -220,12 +223,16 @@ mobility_data['year'] = mobility_data['year'].astype(int)
 ```
 
 ```{python}
+#| eval: true
+#| echo: false
 # Merge mobility data with the gss data on "year"
 gss_data1 = pd.merge(mobility_data, gss_data1, on="year", how="left")
 ```
 
 
 ```{python}
+#| eval: true
+#| echo: false
 # Format the date and filter for October in the GDP data
 us_gdp_data['Date'] = pd.to_datetime(us_gdp_data['DATE'], format='%Y-%m-%d')
 us_gdp_data['Year'] = us_gdp_data['Date'].dt.year
@@ -233,16 +240,11 @@ us_gdp_data['Month'] = us_gdp_data['Date'].dt.month
 us_gdp_data = us_gdp_data[us_gdp_data['Month'] == 10]
 ```
 
-```{python}
-# Verifying by printing the first few rows of each dataset
-print(gss_data.head())
-print(us_gdp_data.head())
-print(us_immigration_data.head())
-```
-
 We standardized column names, cleaned data by removing unnecessary columns, and calculated yearly averages. External datasets like US Immigration, GDP, and mobility data were processed and merged with GSS data using the "year" column. GDP data was filtered for October observations, ensuring all datasets were aligned and ready for analysis.
 
 ```{python}
+#| eval: true
+#| echo: false
 # Define the columns to interpolate
 columns_to_interpolate = [
     "Fair", "Trust", "Happy", "Helpful", "Mobility", "Mobilitystate", "Aged", 
@@ -258,19 +260,21 @@ columns_to_interpolate = [
 ```
 
 ```{python}
+#| eval: true
+#| echo: false
 # Sort data by 'year' or the relevant column before interpolation
 gss_data2 = gss_data1.sort_values(by='year')
 
 # Check data types of columns to be interpolated
 column_types = gss_data2[columns_to_interpolate].dtypes
-print("Data types of columns to interpolate:")
-print(column_types)
 
 # Convert columns to numeric (force errors to NaN)
 gss_data2[columns_to_interpolate] = gss_data2[columns_to_interpolate].apply(pd.to_numeric, errors='coerce')
 ```
 
 ```{python}
+#| eval: true
+#| echo: false
 # Apply interpolation using KNN imputer method
 imputer = KNNImputer(n_neighbors=5) 
 gss_data2[columns_to_interpolate] = imputer.fit_transform(gss_data2[columns_to_interpolate])
@@ -278,6 +282,8 @@ gss_data2[columns_to_interpolate] = imputer.fit_transform(gss_data2[columns_to_i
 
 
 ```{python}
+#| eval: true
+#| echo: false
 # Scaling the data (using StandardScaler from sklearn)
 scaler = StandardScaler()
 
@@ -288,6 +294,8 @@ gss_data2[columns_to_interpolate] = scaler.fit_transform(gss_data2[columns_to_in
 
 
 ```{python}
+#| eval: true
+#| echo: false
 # Merging datasets (left join)
 gss_data3 = gss_data2.merge(us_immigration_data, how='left', left_on='year', right_on='Year') \
                    .rename(columns={'Number': 'Immigration'}) \
@@ -310,11 +318,8 @@ for column in columns_to_lag:
 
 # Calculating statistics (can be adjusted as needed)
 calculateStatistics_data = gss_data3
-```
 
-```{python}
-print(calculateStatistics_data.head())
-calculateStatistics_data.to_csv(r"F:\python2\Final-Project\Shiny app\calculateStatistics_data.csv", index=False)
+calculateStatistics_data.to_csv(r"C:\Users\freya\Desktop\24 fall study\Python2\Final Project\Shiny App\calculateStatistics_data.csv", index=False)
 ```
 
 We prepared the data by interpolating missing values using KNN imputation, standardizing the variables for consistency, and merging external datasets like immigration and GDP data to add context. Lagged variables were created to capture temporal relationships, ensuring the dataset was ready for regression and statistical analysis.
@@ -327,9 +332,11 @@ To further help other researchers who are interested in studying effect of mobil
 By using this Shiny App, users can freely choose any variables they are interested in, run the analysis, and visualize the results, ensuring the research process remains unbiased and transparent. This approach will allow future studies to validate their findings and ensure their analysis is not influenced by subjective variable selection. 
 
 ```{python}
+#| eval: true
+#| echo: false
 # Load data paths
-cleaned_data_path = r"C:\Users\Aurora\Desktop\final project\calculateStatistics_data_test.csv"
-labels_data_path = r"C:\Users\Aurora\Desktop\final project\labels_data.csv"
+cleaned_data_path = r"C:\Users\freya\Desktop\24 fall study\Python2\Final Project\Shiny App\calculateStatistics_data.csv"
+labels_data_path = r"C:\Users\freya\Desktop\24 fall study\Python2\Final Project\labels_data.csv"
 
 # Load cleaned data
 def load_cleaned_data():
@@ -350,6 +357,8 @@ labels_data = load_labels()
 
 ### UI Design
 ```{python}
+#| eval: true
+#| echo: false
 # Define UI
 app_ui = ui.page_fluid(
     ui.tags.style("""
@@ -403,6 +412,8 @@ Before doing regression and cherry-picking test, let's draw some pictures using 
 
 #### Focused variables over Time
 ```{python}
+#| eval: true
+#| echo: false
 # Melt the DataFrame to long format for Altair
 gss_melted = calculateStatistics_data.melt(
     id_vars=["year"],  # Ensure 'year' exists in your DataFrame
@@ -444,6 +455,8 @@ final_chart
 
 #### Effects of mobility on Trust, Fair, Happy
 ```{python}
+#| eval: true
+#| echo: false
 # Create a new column for Mobility categorized into Low, Medium, High
 calculateStatistics_data['Mobility_Category'] = pd.cut(calculateStatistics_data['Mobility'], 
                                                      bins=[-float('inf'), calculateStatistics_data['Mobility'].quantile(0.33), 
@@ -470,6 +483,8 @@ boxplot
 ```
 
 ```{python}
+#| eval: true
+#| echo: false
 gss_melted2 = calculateStatistics_data.melt(
     id_vars=["Mobility"],  # Use Mobility as the x-axis
     value_vars=["Happy", "Trust", "Fair"],  # Variables to plot as separate lines
@@ -501,6 +516,8 @@ From these plots, we can generally conclude that mobility has a positive relatio
 ### Regression and Dynamic Plots
 Now, let's do the regressions and draw some dynamic plots.
 ```{python}
+#| eval: true
+#| echo: false
 # Server logic
 def server(input, output, session):
     # Reactive function to filter variables
@@ -886,9 +903,11 @@ The second chart is a raincloud plot comparing the distribution of absolute t-va
 ### Cherry-picking test--Dynamic Plots
 
 ```{python}
+#| eval: true
+#| echo: false
 # Load data paths
-cleaned_data_path = r"F:\python2\Final-Project\Shiny app\calculateStatistics_data.csv"
-labels_data_path = r"F:\python2\Final-Project\Shiny app\labels_data.csv"
+cleaned_data_path = r"C:\Users\freya\Desktop\24 fall study\Python2\Final Project\Shiny App\calculateStatistics_data.csv"
+labels_data_path = r"C:\Users\freya\Desktop\24 fall study\Python2\Final Project\labels_data.csv"
 
 # Load cleaned data
 def load_cleaned_data():
@@ -928,6 +947,8 @@ def filter_variables(variable_types, missing_threshold):
 
 
 ```{python}
+#| eval: true
+#| echo: false
 # Perform PCA and clustering
 def perform_pca_and_clustering(selected_vars):
     if not selected_vars or len(selected_vars) < 2:
@@ -989,6 +1010,8 @@ def generate_pca_plot(pca_result, clusters, variable_names):
 ```
 
 ```{python}
+#| eval: true
+#| echo: false
 # Perform regression
 def perform_regression(selected_vars):
     if not selected_vars or len(selected_vars) < 2:
@@ -1036,6 +1059,8 @@ def generate_cluster_info(clusters, variable_names):
 ```
 
 ```{python}
+#| eval: true
+#| echo: false
 # Plot regression fit lines
 def plot_regression_fit_lines(cleaned_data, top_vars):
     plt.figure(figsize=(12, 8))
@@ -1055,6 +1080,8 @@ def plot_regression_fit_lines(cleaned_data, top_vars):
 
 
 ```{python}
+#| eval: true
+#| echo: false
 # Generate barplot and raincloud plot
 def generate_plots(regression_results, clusters, variable_names, interested_vars):
     if regression_results is None:
@@ -1129,6 +1156,8 @@ def generate_plots(regression_results, clusters, variable_names, interested_vars
 
 
 ```{python}
+#| eval: true
+#| echo: false
 # Main execution
 if __name__ == "__main__":
     variable_types = ["Likert Scale Variables"]
@@ -1151,7 +1180,6 @@ if __name__ == "__main__":
 
     # Perform regression
     regression_results = perform_regression(selected_vars)
-    print(regression_results)
 
     # Select top 5 positive and 5 negative variables by MOBILITYLAG_coef
     regression_results["abs_coef"] = regression_results["MOBILITYLAG_coef"].abs()
