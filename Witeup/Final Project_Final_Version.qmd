@@ -6,9 +6,9 @@ format: html
 ## Group Members:
 Name / Cnetid / Github_username / section
 
-1.Pei-Chin Lu / Peichin / Pei0504 / section 4
+1.Pei-Chin Lu / Peichin / Pei0504 / section 3
 
-2. Yuan Qi / yuanqi / freyaqi / section 4
+2. Yuan Qi / yuanqi / freyaqi / section 2
 
 3. Huiting(Aurora) Zhang / zhanght / aurorazhang688 / section 4
 
@@ -68,6 +68,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 import altair as alt
+alt.renderers.enable("png")
 ```
 
 ## Load Dataset
@@ -435,8 +436,8 @@ line_chart = alt.Chart(gss_melted).mark_line().encode(
     color=alt.Color("Variable:N", scale=color_scale, title="Legend"),
     strokeDash=alt.StrokeDash("Variable:N")  # Different line styles for each variable
 ).properties(
-    width=800,
-    height=400,
+    width=450,
+    height=300,
     title="Cultural Factors Over Time"
 )
 
@@ -473,7 +474,7 @@ boxplot = alt.Chart(calculateStatistics_data).transform_fold(
     color=alt.Color('Variable:N', title='Legend'),  # Different colors for each variable
     column=alt.Column('Mobility_Category:N', title='Mobility Categories')  # Boxplot separated by Mobility categories
 ).properties(
-    width=300,
+    width=200,
     height=300,
     title='Boxplot: Effect of Mobility on Trust, Fair, and Happy'
 )
@@ -503,8 +504,8 @@ chart = alt.Chart(gss_melted2).mark_line(point=True).encode(
         alt.Tooltip('Value:Q', title='Value')
     ]
 ).properties(
-    width=800,
-    height=400,
+    width=450,
+    height=300,
     title='Mobility vs Happy, Trust, and Fair'
 ).interactive()  # Enable interactivity for zoom and pan
 
